@@ -23,46 +23,89 @@ The node operates in two phases:
 1. **Initialisation** -- YOLO detects the target object and produces a bounding box. MegaPose runs the full pipeline (coarse SO(3) grid search + refiner). This is slow (~1-2s) but only happens once.
 2. **Tracking** -- Subsequent frames skip detection and coarse estimation entirely. The previous pose is passed directly to MegaPose's refiner for fast iterative updates. If the pose confidence drops below a threshold, the node automatically re-initialises via YOLO.
 
+## Directory Layout
+
+This client is designed to sit alongside the [megapose6d](https://github.com/megapose6d/megapose6d) repository and be symlinked into a ROS2 workspace:
+
+```
+your_project/
+├── megapose6d/                      # MegaPose6D library (cloned separately)
+│   ├── src/megapose/                #   Python package
+│   ├── local_data/                  #   Model weights go here
+│   ├── setup.py
+│   └── ...
+│
+├── megaposeClient/                  # This repository
+│   ├── README.md
+│   └── src/                         #   ROS2 ament_python package root
+│       ├── package.xml
+│       ├── setup.py / setup.cfg
+│       ├── detection_client/        #   Node source code
+│       └── launch/                  #   Launch files
+│
+└── ros2_ws/                         # Your ROS2 workspace
+    └── src/
+        └── detection_client -> ../../megaposeClient/src   # symlink
+```
+
+### Initial setup
+
+```bash
+# 1. Clone both repos side by side
+git clone https://github.com/megapose6d/megapose6d.git
+git clone <this-repo-url> megaposeClient
+
+# 2. Install MegaPose6D as a Python package
+cd megapose6d
+pip install -e .
+
+# 3. Download model weights into megapose6d/local_data/
+python -m megapose.scripts.download --megapose_models
+
+# 4. Symlink the client into your ROS2 workspace
+cd ../ros2_ws/src
+ln -s ../../megaposeClient/src detection_client
+```
+
+Note: the symlink target is `megaposeClient/src` (not the repo root), because that is the ament package directory containing `package.xml` and `setup.py`.
+
 ## Prerequisites
 
 - **ROS2** (Humble or later)
-- **MegaPose6D** installed as a Python package:
-  ```bash
-  cd /path/to/megapose6d
-  pip install -e .
-  ```
-- **MegaPose model weights** downloaded to `megapose6d/local_data/megapose-models/`:
-  ```bash
-  python -m megapose.scripts.download --megapose_models
-  ```
+- **MegaPose6D** installed as a Python package (see setup above)
+- **MegaPose model weights** downloaded to `megapose6d/local_data/megapose-models/`
 - **Ultralytics** (YOLO) and **trimesh** (overlay rendering):
-  ```bash
-  pip install ultralytics trimesh
-  ```
+
+```bash
+pip install ultralytics trimesh
+```
+
 - **RealSense ROS2 driver**:
-  ```bash
-  sudo apt install ros-${ROS_DISTRO}-realsense2-camera
-  ```
+
+```bash
+sudo apt install ros-${ROS_DISTRO}-realsense2-camera
+```
+
 - **NVIDIA GPU** with CUDA (required by MegaPose and YOLO)
 
 ## Quick Start
 
 ### 1. Prepare your object mesh
 
-Place a 3D mesh (`.ply` or `.obj`) in the `meshes/` directory. The folder name becomes the object label automatically:
+Place a 3D mesh (`.ply` or `.obj`) inside `src/detection_client/meshes/`. Each object gets its own subfolder -- the folder name becomes the object label:
 
 ```
-meshes/
+src/detection_client/meshes/
   └── my_object/
         └── model.ply
 ```
 
+A sample `cube` mesh is included out of the box.
+
 ### 2. Build the package
 
 ```bash
-cd <your_ros2_workspace>/src
-ln -s /path/to/megaposeClient .
-cd ..
+cd ros2_ws
 colcon build --packages-select detection_client
 source install/setup.bash
 ```
@@ -174,17 +217,23 @@ Benchmarked on RTX 3060-class GPUs. The init frame (YOLO + coarse + refiner) tak
 ## Package Structure
 
 ```
-megaposeClient/
-  package.xml                     # ROS2 package manifest
-  setup.py                        # Entry points
-  setup.cfg                       # Install config
-  resource/detection_client       # Ament resource index marker
-  detection_client/
-    __init__.py
-    detection_node.py             # Single node with all logic
-  launch/
-    detection.launch.py           # Launch file with all parameters
-  meshes/                         # Place object meshes here
+megaposeClient/                        # Git repository root
+├── README.md
+├── .gitignore
+└── src/                               # ament_python package root (symlink this into your workspace)
+    ├── package.xml                    #   ROS2 package manifest
+    ├── setup.py                       #   Entry points & data files
+    ├── setup.cfg                      #   Install script directories
+    ├── resource/
+    │   └── detection_client           #   Ament resource index marker
+    ├── detection_client/
+    │   ├── __init__.py
+    │   ├── detection_node.py          #   Single node with all logic
+    │   └── meshes/                    #   Default mesh directory
+    │       └── cube/                  #   Sample object (included)
+    │           └── cube.ply
+    └── launch/
+        └── detection.launch.py        #   Launch file with all parameters
 ```
 
 ## License
